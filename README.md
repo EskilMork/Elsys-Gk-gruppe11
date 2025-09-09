@@ -7,3 +7,5 @@
 # Eskil Mork Chief of getting carried by Github-copilot 
 
 # Iver Hovstein Thorsberg Chief Engineer of “It Worked on My Machine”
+
+# Anders Myklebust Øyen Leading HR-engineer and Prompt-engineer

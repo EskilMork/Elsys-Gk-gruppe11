@@ -1,4 +1,4 @@
-# Krisitan Gjestad chief software and female relation specalist 
+# Krisitan Gjestad chief software and female relation specalist, master of coin, dragonslayer, patHøst survivor
 
 # FREDRIK Kämpe hasselø CEO and chief mulletbart acquisitions
 

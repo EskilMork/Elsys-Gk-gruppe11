@@ -1,7 +1,7 @@
 a = input("hvem er best")
 
-if a != "kristian":
-    print("feil svar det er kristian")
+if a != "Eskil":
+    print("feil svar det er Eskil")
 
 else:
     print("riktig!!!!")

@@ -5,3 +5,5 @@
 # Marius Rizan Andresen SjefGPT of road to 10K trophies on Clash Royal
 
 # Eskil Mork Chief of getting carried by Github-copilot 
+
+# Iver Hovstein Thorsberg Chief Engineer of “It Worked on My Machine”

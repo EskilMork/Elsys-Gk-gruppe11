@@ -1,0 +1,590 @@
+<html>
+
+<head>
+    <title>Stem på aktiviter</title> <!--Tittel på -->
+    <link rel="stylesheet" href="/static/style.css"> <!--Knytter siden til css for et bedre utseende-->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0"></script> <!--Linker til et javascript bibliotek for å lage grafer. Brukt her for å lage pie-chartene-->
+</head>
+<div class="header"> <!--Toppmeny med knapper for å lage ny poll og for å eksportere resultatene av avstemningen-->
+    <div class="knapp" id="Nyknapp">Ny poll</div>
+    <div class="knapp" id="Eksporter">Eksporter resultater</div>
+
+</div>
+
+<body>
+    <div class="main"> <!--Hoveddel hvor alle avstemningene blir lagt-->
+        <div class="brukere">
+
+        </div>
+    </div>
+    <div class="bunn"> <!--Bunnmeny med bryter for å bytte siden til darkmode-->
+        <label class="togglemode">
+            <input class="baktog" type="checkbox">
+            <span class="bryter"></span>
+        </label>
+    </div>
+
+    <script> //Javascript kode
+    // Dette skriptet styrer klientlogikken for avstemningsgrensesnittet.
+    // Kommentarer nedenfor forklarer funksjoner og flyten på norsk.
+        const nyknapp = document.querySelector("#Nyknapp"); //Brukes for  å få tilgang til HTML-elementene i Javascript
+        const eksporterBtn = document.querySelector("#Eksporter");
+        const brukereboks = document.querySelector(".brukere");
+        const body = document.querySelector("body");
+        const personer = []; //Array som skal inneholde all info om aktivitetene
+        const API_BASE = "http://0.0.0.0:8000"; //Raspberrypiens ip-addresse, brukt for å knytte nettsiden opp mot pien
+        const CLEAN_API_BASE = API_BASE.replace(/\/+$/, "");
+
+        // Bygger full URL for et bilde som er lagret på serveren.
+        // Hvis `imagePath` allerede er en ekstern URL returneres den uendret.
+        function buildImageUrl(imagePath) {
+            if (!imagePath) return null;
+            if (/^https?:\/\//i.test(imagePath)) {
+                return imagePath;
+            }
+            const cleanPath = String(imagePath).replace(/^\/+/, "");
+            return `${CLEAN_API_BASE}/${cleanPath}`;
+        }
+
+        // Oppdaterer visuell tilstand for en dropzone (dra-og-slipp område)
+        // state kan være: null, "dragover" eller "uploading".
+        function setDropZoneState(zone, state) {
+            if (!zone) return;
+            zone.classList.toggle("dragover", state === "dragover");
+            zone.classList.toggle("uploading", state === "uploading");
+        }
+
+        // Oppdaterer forhåndsvisning og tekster i dropzone basert på om pollen
+        // er lagret på serveren og om det finnes et tilknyttet bilde.
+        function updatePersonImagePreview(person) { 
+            if (!person || !person.dropZone) return;
+            const hasId = Boolean(person.server_id);
+            const hasImage = Boolean(person.imagePath);
+            const dropZone = person.dropZone;
+            const preview = person.dropPreview;
+            const label = person.dropLabel;
+
+            dropZone.classList.toggle("disabled", !hasId);
+            dropZone.classList.toggle("has-image", hasImage);
+
+            if (label) {
+                if (!hasId) {
+                    label.innerText = "Lagre pollen før du laster opp bilde";
+                } else if (hasImage) {
+                    label.innerText = "Dra nytt bilde for å bytte";
+                } else {
+                    label.innerText = "Dra og slipp bilde\neller klikk for å velge";
+                }
+            }
+
+            if (preview) {
+                if (hasImage) {
+                    const url = buildImageUrl(person.imagePath);
+                    preview.src = url ? `${url}?t=${Date.now()}` : "";
+                    preview.classList.remove("hidden");
+                } else {
+                    preview.src = "";
+                    preview.classList.add("hidden");
+                }
+            }
+        }
+
+        // Validerer lokal fil før opplasting og viser feilmeldinger ved behov.
+        function handleImageFile(person, file) {
+            if (!file) return;
+            if (!person.server_id) {
+                alert("Lagre pollen på serveren før du legger til et bilde.");
+                return;
+            }
+            if (!file.type.startsWith("image/")) {
+                alert("Vennligst last opp en bildefil (PNG, JPG, ...).");
+                return;
+            }
+            uploadImageForPerson(person, file);
+        }
+
+        // Sender bildefilen til serveren med retry-logikk.
+        // Oppdaterer lokal forhåndsvisning ved suksess.
+        async function uploadImageForPerson(person, file) {
+            if (!person || !person.server_id) return;
+            setDropZoneState(person.dropZone, "uploading");
+            let attempt = 1;
+            const maxAttempts = 2;
+            while (attempt <= maxAttempts) {
+                try {
+                    const formData = new FormData();
+                    formData.append("poll_id", person.server_id);
+                    formData.append("poll_name", person.navn || "");
+                    formData.append("file", file, file.name);
+                    const response = await fetch(`${API_BASE}/upload_image/`, {
+                        method: "POST",
+                        body: formData
+                    });
+                    if (!response.ok) {
+                        const text = await response.text();
+                        throw new Error(text || "Ukjent feil ved opplasting");
+                    }
+                    const data = await response.json();
+                    person.imagePath = data && data.data ? data.data.image_path : null;
+                    updatePersonImagePreview(person);
+                    setDropZoneState(person.dropZone, null);
+                    return;
+                } catch (error) {
+                    console.error("Klarte ikke å laste opp bilde:", error);
+                    if (attempt >= maxAttempts) {
+                        alert("Klarte ikke å laste opp bilde. Prøv igjen, eller sjekk konsollen for detaljer.");
+                        setDropZoneState(person.dropZone, null);
+                        return;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                    attempt += 1;
+                }
+            }
+        }
+
+        // Genererer en unik ID som brukes som midlertidig server-id før den
+        // eventuelt lagres i backend-databasen.
+        function generateServerId() {
+            if (window.crypto && typeof window.crypto.randomUUID === "function") {
+                return window.crypto.randomUUID();
+            }
+            return "poll-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        }
+
+        // Håndterer valg av en eksisterende poll i listen. Sender en POST til
+        // serveren for å gjøre den valgte pollen aktiv i displayet.
+        function handleSelectPoll(localId) {
+            const person = personer.find(u => u.id === localId);
+            const serverId = person && person.server_id ? person.server_id : null;
+            if (!serverId) {
+                console.warn("Denne pollen har ingen server-id ennå; kan ikke velge gammel poll.");
+                return;
+            }
+
+            fetch(`${API_BASE}/update_caption/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: String(serverId), text: person.navn })
+            })
+                .then(async response => {
+                    if (!response.ok) {
+                        const txt = await response.text();
+                        throw new Error(`Feil fra server: ${response.status} - ${txt}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log("Server svarte (select):", data);
+                    if (data && data.data) {
+                        const payload = data.data;
+                        person.scores.gronn = payload.score_a ?? person.scores.gronn ?? 0;
+                        person.scores.rod = payload.score_b ?? person.scores.rod ?? 0;
+                        if ("score_meh" in payload) {
+                            person.scores.gul = payload.score_meh;
+                        }
+                        if ("image_path" in payload) {
+                            person.imagePath = payload.image_path;
+                            updatePersonImagePreview(person);
+                        }
+                        if (person.chart) {
+                            person.chart.data.datasets[0].data = [
+                                person.scores.gronn,
+                                person.scores.gul,
+                                person.scores.rod
+                            ];
+                            person.chart.update();
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error("Feil ved valg av poll:", err);
+                    alert(`Klarte ikke å hente pollen: ${err.message}`);
+                });
+        }
+
+    // Lager DOM-elementene for en person/poll og binder event listeners.
+    // Dette inkluderer chart, dropzone for bilde og knappen "Stem på denne".
+    function renderPersonCard(person) {
+            const bruker = document.createElement("div");
+            bruker.className = "bruker";
+
+            const canvas = document.createElement("canvas");
+            canvas.className = "chartCanvas";
+            canvas.width = 120;
+            canvas.height = 120;
+            if (person.server_id) {
+                canvas.dataset.serverId = person.server_id;
+            }
+
+            const navnEl = document.createElement("p");
+            navnEl.className = "navn";
+            navnEl.innerText = person.navn;
+
+            const valgBoks = document.createElement("div");
+            valgBoks.className = "valgBoks";
+
+            const velgknapp = document.createElement("button");
+            velgknapp.innerText = "Stem på denne";
+            valgBoks.appendChild(velgknapp);
+
+            bruker.appendChild(canvas);
+            bruker.appendChild(navnEl);
+            bruker.appendChild(valgBoks);
+            const dropZone = document.createElement("div");
+            dropZone.className = "dropzone";
+            const dropPreview = document.createElement("img");
+            dropPreview.className = "dropzone-preview hidden";
+            dropZone.appendChild(dropPreview);
+            const dropLabel = document.createElement("p");
+            dropLabel.className = "dropzone-label";
+            dropLabel.innerText = "Dra og slipp bilde\neller klikk for å velge";
+            dropZone.appendChild(dropLabel);
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.accept = "image/*";
+            fileInput.className = "dropzone-input";
+            dropZone.appendChild(fileInput);
+            bruker.appendChild(dropZone);
+            brukereboks.appendChild(bruker);
+
+            // Når brukeren klikker på "Stem på denne" hentes og vises poll-data.
+            velgknapp.addEventListener("click", () => handleSelectPoll(person.id));
+            dropZone.addEventListener("click", () => {
+                if (!person.server_id) {
+                    alert("Lagre pollen på serveren før du legger til et bilde.");
+                    return;
+                }
+                fileInput.click();
+            });
+            fileInput.addEventListener("change", (event) => {
+                const file = event.target.files && event.target.files[0];
+                handleImageFile(person, file);
+                event.target.value = "";
+            });
+            ["dragenter", "dragover"].forEach(evt => {
+                dropZone.addEventListener(evt, (event) => {
+                    event.preventDefault();
+                    if (!person.server_id) return;
+                    dropZone.classList.add("dragover");
+                });
+            });
+            ["dragleave", "drop"].forEach(evt => {
+                dropZone.addEventListener(evt, (event) => {
+                    event.preventDefault();
+                    dropZone.classList.remove("dragover");
+                });
+            });
+            dropZone.addEventListener("drop", (event) => {
+                event.preventDefault();
+                if (!person.server_id) {
+                    alert("Lagre pollen på serveren før du legger til et bilde.");
+                    return;
+                }
+                const file = event.dataTransfer.files && event.dataTransfer.files[0];
+                handleImageFile(person, file);
+            });
+
+            // Prøv å initialisere Chart.js for å vise resultatene som et pie-chart.
+            try {
+                const ctx = canvas.getContext("2d");
+                const chart = new Chart(ctx, {
+                    type: "pie",
+                    data: {
+                        labels: ["Grønn", "Gul", "Rød"],
+                        datasets: [{
+                            data: [0, 0, 0],
+                            backgroundColor: ["#2ecc71", "#f1c40f", "#e74c3c"]
+                        }]
+                    },
+                    options: {
+                        responsive: false,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } }
+                    }
+                });
+                chart.data.datasets[0].data = [
+                    person.scores.gronn || 0,
+                    person.scores.gul || 0,
+                    person.scores.rod || 0
+                ];
+                chart.update();
+                person.chart = chart;
+            } catch (e) {
+                console.warn("Kunne ikke initialisere chart for bruker", person.id, e);
+            }
+
+            person.canvas = canvas;
+            person.dom = bruker;
+            person.dropZone = dropZone;
+            person.dropPreview = dropPreview;
+            person.dropLabel = dropLabel;
+            updatePersonImagePreview(person);
+        }
+
+    // Oppretter et nytt person-objekt lokalt og renderer kortet i UI.
+    function createPerson({ navn, serverId = null, scores = {}, imagePath = null }) {
+            const localId = personer.length;
+            const person = {
+                navn,
+                id: localId,
+                server_id: serverId,
+                scores: {
+                    gronn: scores.gronn ?? 0,
+                    gul: scores.gul ?? 0,
+                    rod: scores.rod ?? 0
+                },
+                chart: null,
+                canvas: null,
+                dom: null,
+                imagePath
+            };
+            personer.push(person);
+            renderPersonCard(person); //Laster inn person-objektet for å skape div-en til pollen på nettsiden
+            return person;
+        }
+
+    // Henter eksisterende polls fra backend og legger dem til i UI-listen.
+    async function lastInnEksisterendePoller() {
+            try {
+                const response = await fetch(`${API_BASE}/get_old_polls`);
+                if (!response.ok) {
+                    throw new Error(`Klarte ikke å hente gamle polls: ${response.status}`);
+                }
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    data.forEach(poll => {
+                        if (!poll || !poll.id) {
+                            return;
+                        }
+                        const finnes = personer.some(p => String(p.server_id) === String(poll.id));
+                        if (finnes) {
+                            return;
+                        }
+                        createPerson({
+                            navn: poll.caption || poll.navn || "Uten navn",
+                            serverId: poll.id,
+                            scores: {
+                                gronn: poll.score_a ?? 0,
+                                gul: poll.score_meh ?? 0,
+                                rod: poll.score_b ?? 0
+                            },
+                            imagePath: poll.image_path ?? null
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error("Feil ved innlasting av gamle polls:", error);
+            }
+        }
+
+    // Eksporter resultater til CSV: bygger en CSV-fil og laster den ned.
+        if (eksporterBtn) {
+            eksporterBtn.addEventListener("click", function () {
+                if (!personer || personer.length === 0) {
+                    alert("Ingen resultater å eksportere");
+                    return;
+                }
+
+                const headers = ["Navn", "Grønn (YES)", "Gul (MEH)", "Rød (NO)", "Total"];
+                const rows = personer.map(p => {
+                    const green = (p.scores && p.scores.gronn) != null ? p.scores.gronn : 0;
+                    const yellow = (p.scores && p.scores.gul) != null ? p.scores.gul : 0;
+                    const red = (p.scores && p.scores.rod) != null ? p.scores.rod : 0;
+                    const total = green + yellow + red;
+                    return [
+                        p.navn || p.name || "",
+                        green,
+                        yellow,
+                        red,
+                        total
+                    ];
+                });
+
+                const csvLines = [headers.join(";")];
+                for (const row of rows) {
+                    const escaped = row.map(cell => {
+                        const s = String(cell);
+                        const q = s.replace(/"/g, '""');
+                        return `"${q}"`;
+                    });
+                    csvLines.push(escaped.join(";"));
+                }
+                const csv = csvLines.join("\n");
+
+                const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                const ts = new Date().toISOString().replace(/[:.]/g, "-");
+                a.download = `results_${ts}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+    // Håndtering for "Ny poll"-knappen: oppretter popup for å lage en ny poll.
+    if (nyknapp) {
+            nyknapp.addEventListener("click", function () { 
+                const popupmid = document.createElement("div"); //Brukes for å lage en popup
+                popupmid.className = "popup";
+                body.appendChild(popupmid);
+
+                const lukkeknapp = document.createElement("button");
+                lukkeknapp.innerText = "x";
+                lukkeknapp.className = "lukkeknapp";
+                popupmid.appendChild(lukkeknapp);
+
+                const tekstin = document.createElement("input");
+                tekstin.type = "text";
+                tekstin.placeholder = "Skriv inn navnet på pollen her";
+                tekstin.className = "tekstin";
+                popupmid.appendChild(tekstin);
+
+                const lagreknapp = document.createElement("button");
+                lagreknapp.className = "lagreknapp";
+                lagreknapp.innerText = "Trykk her for å opprette pollen";
+                popupmid.appendChild(lagreknapp);
+
+                lukkeknapp.addEventListener("click", function () {
+                    popupmid.remove();
+                });
+                lagreknapp.addEventListener("click", function () {
+                    const navneVerdi = tekstin.value.trim();
+                    if (!navneVerdi) {
+                        alert("Skriv inn navnet på pollen før du lagrer.");
+                        return;
+                    }
+
+                    const serverId = generateServerId();
+                    popupmid.remove();
+
+                    const person = createPerson({
+                        navn: navneVerdi,
+                        serverId,
+                        scores: { gronn: 0, gul: 0, rod: 0 }
+                    });
+
+                    fetch(`${API_BASE}/update_caption/`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ id: String(serverId), text: navneVerdi, name: navneVerdi })
+                    })
+                        .then(async response => {
+                            if (!response.ok) {
+                                const txt = await response.text();
+                                throw new Error(`Feil fra server: ${response.status} - ${txt}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            console.log("Server svarte (create):", data);
+                            if (data && data.data && data.data.id) {
+                                person.server_id = data.data.id;
+                                if (person.canvas) {
+                                    person.canvas.dataset.serverId = data.data.id;
+                                }
+                                person.imagePath = data.data.image_path ?? null;
+                                updatePersonImagePreview(person);
+                            }
+                            lastInnEksisterendePoller();
+                        })
+                        .catch(error => {
+                            console.error("Klarte ikke å sende POST ved opprettelse:", error);
+                        });
+                });
+            });
+        }
+
+        //Funksjoner som kjører nå siden laster inn
+        lastInnEksisterendePoller();
+        async function hentAlleScores() {
+            try {
+                const response = await fetch(`${API_BASE}/get_scores/`);
+                if (!response.ok) {
+                    throw new Error("Klarte ikke å hente score: " + response.status);
+                }
+
+                const data = await response.json();
+                console.log("Fikk score-data:", data);
+
+                const findPersonForId = (incomingId) => {
+                    return personer.find(u => String(u.id) === String(incomingId) || String(u.server_id) === String(incomingId));
+                };
+
+                if (Array.isArray(data)) {
+                    data.forEach(item => {
+                        const p = findPersonForId(item.id);
+                        if (p) {
+                            p.scores.gronn = item.score_a;
+                            p.scores.rod = item.score_b;
+                            if ("score_meh" in item) {
+                                p.scores.gul = item.score_meh;
+                            }
+                            if (p.chart) {
+                                p.chart.data.datasets[0].data = [p.scores.gronn, p.scores.gul, p.scores.rod];
+                                p.chart.update();
+                            }
+                        }
+                    });
+                } else if (data && typeof data === "object") {
+                    if ("id" in data) {
+                        const p = findPersonForId(data.id);
+                        if (p) {
+                            p.scores.gronn = data.score_a;
+                            p.scores.rod = data.score_b;
+                            if ("score_meh" in data) p.scores.gul = data.score_meh;
+                            if (p.chart) {
+                                p.chart.data.datasets[0].data = [p.scores.gronn, p.scores.gul, p.scores.rod];
+                                p.chart.update();
+                            }
+                        }
+                    } else {
+                        Object.values(data).forEach(item => {
+                            if (item && typeof item === "object" && "id" in item) {
+                                const p = findPersonForId(item.id);
+                                if (p) {
+                                    p.scores.gronn = item.score_a;
+                                    p.scores.rod = item.score_b;
+                                    if ("score_meh" in item) p.scores.gul = item.score_meh;
+                                    if (p.chart) {
+                                        p.chart.data.datasets[0].data = [p.scores.gronn, p.scores.gul, p.scores.rod];
+                                        p.chart.update();
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error("Feil ved henting av score:", error);
+            }
+        }
+
+        hentAlleScores();
+        setInterval(hentAlleScores, 1000); //Oppdaterer scorene på nettsiden hvert sekund
+
+        //Javascript logikken for å bytte mellom lightmode og darkmode, lagrer også valget i localstorage
+        const toggleSwitch = document.querySelector(".baktog");
+        if (toggleSwitch) {
+            const currentTheme = localStorage.getItem("theme") || "light";
+            if (currentTheme === "dark") {
+                document.body.classList.add("dark-mode");
+                toggleSwitch.checked = true;
+            }
+
+            toggleSwitch.addEventListener("change", function () {
+                if (this.checked) {
+                    document.body.classList.add("dark-mode");
+                    localStorage.setItem("theme", "dark");
+                } else {
+                    document.body.classList.remove("dark-mode");
+                    localStorage.setItem("theme", "light");
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>

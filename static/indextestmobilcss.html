@@ -2,7 +2,11 @@
 
 <head>
     <title>Stem på aktiviter</title> <!--Tittel på -->
+    <!-- For bedre skalering på mobil -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="/static/style.css"> <!--Knytter siden til css for et bedre utseende-->
+    <!-- Mobile-specific stylesheet: will apply for narrow viewports and mobile devices. -->
+    <link rel="stylesheet" href="/static/mobil.css" media="(max-width: 800px)">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0"></script> <!--Linker til et javascript bibliotek for å lage grafer. Brukt her for å lage pie-chartene-->
 </head>
 <div class="header"> <!--Toppmeny med knapper for å lage ny poll og for å eksportere resultatene av avstemningen-->
@@ -31,7 +35,7 @@
         const eksporterBtn = document.querySelector("#Eksporter");
         const brukereboks = document.querySelector(".brukere");
         const body = document.querySelector("body");
-    // Visible debug box for quick diagnostics
+    // Small visible debug box to help when testing in browsers
     const debugBox = document.createElement('div');
     debugBox.id = 'debugBox';
     debugBox.style.position = 'fixed';
@@ -46,8 +50,8 @@
     debugBox.textContent = 'API_BASE: (resolving...)';
     document.addEventListener('DOMContentLoaded', () => document.body.appendChild(debugBox));
         const personer = []; //Array som skal inneholde all info om aktivitetene
-        // Use the page origin so the client talks to the same host the page was served from.
-        // Optional override for testing: ?api_base=http://host:port
+        // Best-effort: use the page origin so the client talks to the same host the page was served from.
+        // You can override by supplying ?api_base=http://host:port in the URL for testing.
         const _defaultOrigin = (typeof window !== 'undefined' && window.location && window.location.origin)
             ? window.location.origin
             : 'http://127.0.0.1:8000';

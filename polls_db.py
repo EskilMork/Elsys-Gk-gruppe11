@@ -1,10 +1,12 @@
+# dette er koden som laster opp all data om alle poller fra hovedprogrammet, over på en sqlite database lagret lokalt.
+
 import os
 import sqlite3
 from typing import Dict, List, Optional
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "polls.db")
 
-
+#starter databasen
 def init_db() -> None:
     """Create the polls table if it does not already exist."""
     with sqlite3.connect(DB_PATH) as conn:
@@ -28,7 +30,7 @@ def init_db() -> None:
             conn.execute("ALTER TABLE polls ADD COLUMN image_path TEXT")
             conn.commit()
 
-
+#lagrer pollen som en helhet. og legger den inn i table som de andre 
 def save_poll_record(poll: Dict[str, int | str]) -> None:
     """Insert or update a poll row."""
     poll_id = poll.get("id")
@@ -58,7 +60,7 @@ def save_poll_record(poll: Dict[str, int | str]) -> None:
         )
         conn.commit()
 
-
+#henter ut en spesifik poll med poll_id
 def fetch_poll(poll_id: str) -> Optional[Dict[str, int | str]]:
     """Return a single poll by id."""
     if not poll_id:
@@ -73,7 +75,7 @@ def fetch_poll(poll_id: str) -> Optional[Dict[str, int | str]]:
         row = cursor.fetchone()
         return dict(row) if row else None
 
-
+#henter ut alle pollene som har blitt lagret hittil
 def fetch_all_polls() -> List[Dict[str, int | str]]:
     """Return all polls ordered by last update."""
     with sqlite3.connect(DB_PATH) as conn:
@@ -83,7 +85,7 @@ def fetch_all_polls() -> List[Dict[str, int | str]]:
         )
         return [dict(row) for row in cursor.fetchall()]
 
-
+#bildehåndtering. For å laste opp bilde (link til hvor bildet ligger lagret) til databasen og linke det opp til riktig poll
 def update_image_path(poll_id: str, image_path: Optional[str]) -> None:
     if not poll_id:
         return
@@ -98,7 +100,7 @@ def update_image_path(poll_id: str, image_path: Optional[str]) -> None:
         )
         conn.commit()
 
-
+#mulighet for å hente poll etter hvilken caption den har. dette er hovedsakelig for å kunne endre navnet på poller.
 def fetch_poll_by_caption(caption: str) -> Optional[Dict[str, int | str]]:
     """Return the newest poll matching the given caption (case-insensitive)."""
     if not caption:

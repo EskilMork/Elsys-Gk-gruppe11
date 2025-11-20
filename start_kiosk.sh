@@ -1,4 +1,7 @@
 #!/bin/bash
+
+
+#dette er et start script som blir kjørt av kode som ligger i /etc/systemd/system som gjør at programmet starter når pien booter
 sleep 1
 unclutter -idle 0.1 &
 

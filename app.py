@@ -1,3 +1,15 @@
+"""
+Dette er hovedprogrammet, og det er litt rotete. Hadde man hatt ytteligere opplæring og forventning om bra kvalitet progging, hadde det selvfølgelig 
+vært mere innsats i slike ting. men her har det vært snakk om å få ting til å fungere.
+
+det bærer preg av litt for mange ting i samme fil som burde vært flyttet til flere filer
+
+det bruker også litt overdrevent med globale variabler. 
+
+men det fungerer. 
+"""
+
+#importer alt mulig. vi hadde nok ram til å ikke tenke for mye på dette.
 import os
 import shutil
 import sys
@@ -25,16 +37,17 @@ from polls_db import (
     update_image_path,
 )
 
+#dette er for lagring av bilder
 BASE_DIR = Path(__file__).resolve().parent
 MEDIA_DIR = BASE_DIR / "media"
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-
+# dette er for å endre mellom bildefremvisning og resultatfremvisning med pygame
 class DisplayMode(Enum):
     RESULTS = "results"
     IMAGE = "image"
 
-
+#dette er for å sikre at bildene ligger på riktig plass
 def normalize_image_path(path_str: Optional[str]) -> Optional[str]:
     if not path_str:
         return None
@@ -50,7 +63,7 @@ def normalize_image_path(path_str: Optional[str]) -> Optional[str]:
     except ValueError:
         return str(candidate)
 
-
+#mere styr for å få bildene til å fungere
 def absolute_image_path(stored_path: Optional[str]) -> Optional[Path]:
     if not stored_path:
         return None
@@ -60,12 +73,17 @@ def absolute_image_path(stored_path: Optional[str]) -> Optional[Path]:
     else:
         candidate = candidate.resolve()
     return candidate
-
+#viktig del for at pygame skal fungere. vi kjørte rasberry pi os lite så det måtte være tydelig hvilken driver som bruktes
 os.environ.setdefault('SDL_VIDEODRIVER', 'kmsdrm')
 
+
+#bugfixing så skjermen fungerer 100% av tiden
+#håndtering av hardware knappene koblet til pien
 DISABLE_GPIO = os.environ.get("DISABLE_GPIO") == "1"
 RUN_DISPLAY = os.environ.get("DISABLE_DISPLAY") != "1"
 
+
+#håndtering av knapper
 if not DISABLE_GPIO:
     try:
         from gpiozero import Button
@@ -79,10 +97,13 @@ else:
 # -------------------------
 # GPIO Button Setup
 # -------------------------
+#globale variabler <3
 yes_count = 0
 no_count =  0
 meh_count = 0
 
+
+#knapper
 if not DISABLE_GPIO and Button:
     button_yes = Button(16, bounce_time=0.04)
     button_no = Button(26, bounce_time=0.04)
@@ -91,6 +112,7 @@ else:
     button_yes = button_no = button_meh = None
 combo_toggle_active = False
 
+#global count slik at det er superenkelt og samhandle mellom server og pygame
 def add_one_yes():
     global yes_count
     yes_count += 1
@@ -124,7 +146,7 @@ current_display_mode = DisplayMode.RESULTS
 current_image_surface = None
 loaded_image_path = None
 
-
+#mye boilderplate for å initiate og configurere pygame
 def mark_image_dirty():
     global loaded_image_path
     loaded_image_path = None
@@ -142,7 +164,7 @@ def toggle_display_mode(explicit: Optional[DisplayMode] = None):
         )
     print(f"Visningsmodus: {current_display_mode.value}")
 
-
+#viktig for å kunne endre mellom bilde og poll
 def check_button_combo_toggle():
     """Toggle display mode if all three hardware buttons are pressed simultaneously."""
     global combo_toggle_active
@@ -160,6 +182,8 @@ init_db()
 # -------------------------
 # Shared data mellom FastAPI og Pygame
 # -------------------------
+
+#håndtering av dataene. generering av egne ider. (kunne kanskje vært gjort direkte av sqlite3?
 shared_data = {
     "id": uuid.uuid4().hex[:8],
     "caption": "Live Duel",  # default caption
@@ -195,6 +219,8 @@ if existing_polls:
 # -------------------------
 # FastAPI Setup
 # -------------------------
+
+#fastAPI er den beste webservern som finnes.!!!!
 app = FastAPI(title="Caption & Score API")
 
 app.add_middleware(
@@ -213,7 +239,7 @@ return_data = {
     "score_meh": score_meh
 }
 
-
+#her er det funksjoner som henter ting i databasen og som senere kalles på av hvert enkelt endpoint
 def save_poll(force: bool = False):
     poll_copy = {
         "id": shared_data.get("id"),
@@ -258,6 +284,7 @@ def resolve_poll_target(poll_id: Optional[str], poll_name: Optional[str]):
             return poll, resolved_id
     return None, None
 
+#basesmodel er top10 beste måter og lagre data på. fungerer perfekt med sql (object oriented mapping)
 
 class Caption(BaseModel):
     id: str
@@ -270,10 +297,13 @@ class ImageAttachment(BaseModel):
     name: Optional[str] = None
     image_path: Optional[str] = None
 
+# sier til fastapi hvor tingene mine ligger lagret
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
 
+#her har vi root endpoint gir oss selvfølgerlig bare htmlen
+#htmlen kaller på de andre endpointsa ettersom hva frontenden trenger
 @app.get("/")
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -392,6 +422,9 @@ async def upload_image(
 
     return {"message": "Bilde lastet opp", "data": target_poll}
 
+
+#fjerna en broke funksjon
+
 # @app.post("/update_caption/")
 #def update_caption(caption: Caption):
 #    print("id cap", caption.id)
@@ -450,14 +483,15 @@ def update_old_polls(id: str):
     return {"message": "Gjenopptok gammel poll", "data": shared_data}
 
                 
-
+#hoster den via uvicorn. kan gjøres mye penere dersom det gjøres via flere files. men her er alt i ett som gjør datahåndtering lettere (ikke ryddigere)
 def run_api():
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
 # Start FastAPI i egen tråd
-threading.Thread(target=run_api, daemon=True).start()
-
+threading.Thread(target=run_api, daemon=True).start() #dette er magien bak alt!
+#her har vi starten på hva som får skjermen til å fungere. (pygamer hovedløkke) dette er hvorfor serveren får sin egen tråd.
+#hadde den trengt det i python3.15?
 if RUN_DISPLAY:
     # -------------------------
     # Hovedløkken til Pygame
@@ -498,6 +532,7 @@ if RUN_DISPLAY:
     BOTTOM_MARGIN = HEIGHT * 0.2
     font_hint = pygame.font.Font(None, int(HEIGHT * 0.035))
 
+    
     def ensure_image_surface_loaded():
         global current_image_surface, loaded_image_path
         target_path = shared_data.get("image_path")
@@ -517,6 +552,7 @@ if RUN_DISPLAY:
             print(f"Kunne ikke laste bilde {absolute}: {exc}")
             current_image_surface = None
 
+    # mye matte for å tegne dette fint.
     def draw_results_view():
         max_score = max(score_a, score_b, score_meh, 1)
         scores = [score_a, score_meh, score_b]
@@ -544,6 +580,7 @@ if RUN_DISPLAY:
         caption_text = font_small.render(shared_data["caption"], True, TEXT_COLOR)
         screen.blit(caption_text, (WIDTH/2 - caption_text.get_width()/2, HEIGHT - caption_text.get_height() - 10))
 
+    # passe på at bildet passer.
     def draw_image_view():
         ensure_image_surface_loaded()
         screen.fill(BG)
@@ -571,11 +608,13 @@ if RUN_DISPLAY:
         caption_text = font_small.render(shared_data["caption"], True, TEXT_COLOR)
         screen.blit(caption_text, (WIDTH/2 - caption_text.get_width()/2, HEIGHT - caption_text.get_height() - 10))
 
+    #for at teksten øverst i hjørnet skal vises. hjar en motsatt funksjon for å bytte tilbake.
     def draw_mode_hint():
         hint_text = "Trykk alle knappene samtidig for å bytte bilde!"
         hint = font_hint.render(hint_text, True, TEXT_COLOR)
         screen.blit(hint, (MARGIN_X * 0.1, 20))
 
+    #hovedfunksjonen.
     while running:
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
@@ -591,6 +630,7 @@ if RUN_DISPLAY:
                     no_count += 1
                 elif e.key == pygame.K_p:
                     toggle_display_mode()
+                    #her endrer den mellom modusene
                 elif e.key == pygame.K_r:
                     toggle_display_mode(DisplayMode.RESULTS)
                 elif e.key == pygame.K_i:

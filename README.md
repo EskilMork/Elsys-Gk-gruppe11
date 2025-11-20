@@ -1,4 +1,4 @@
-# Krisitan Gjestad chief software, public speaker and female relation specialist
+# Krisitan Gjestad chief software
 
 # FREDRIK Kämpe hasselø CEO and chief mulletbart acquisitions
 

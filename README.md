@@ -1,11 +1,11 @@
-# Krisitan Gjestad chief software
+# Krisitan Gjestad 
 
-# FREDRIK Kämpe hasselø CEO and chief mulletbart acquisitions
+# FREDRIK Kämpe hasselø | Gruppeleder
 
-# Marius Rizan Andresen ChiefGPT of road to 10K trophies on Clash Royal
+# Marius Rizan Andresen 
 
-# Eskil Mork Chief of getting carried by Github-copilot 
+# Eskil Mork Chief 
 
-# Iver Hovstein Thorsberg Chief Engineer of “It Worked on My Machine”
+# Iver Hovstein Thorsberg 
 
-# Anders Myklebust Øyen Leading HR-engineer and Prompt-engineer
+# Anders Myklebust Øyen 
